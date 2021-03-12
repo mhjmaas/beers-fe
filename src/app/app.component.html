@@ -1,0 +1,26 @@
+<h1>BeerTracker</h1>
+<p *ngIf="beers?.length === 0">Just add the beers you have been drinking lately</p>
+<ul *ngIf="beers.length > 0">
+  <li *ngFor="let beer of beers">
+    {{beer.name}} ({{beer.percentage}})% <button (click)="removeBeer(beer._id)">Remove</button>
+  </li>
+</ul>
+<form [formGroup]="addBeerForm" (ngSubmit)="onSubmit()">
+
+  <div>
+    <label for="name">
+      Name
+    </label>
+    <input id="name" type="text" formControlName="name">
+  </div>
+
+  <div>
+    <label for="percentage">
+      Percentage
+    </label>
+    <input id="percentage" type="number" formControlName="percentage">
+  </div>
+
+  <button class="button" type="submit">Add</button>
+
+</form>
