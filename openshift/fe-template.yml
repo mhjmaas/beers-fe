@@ -1,0 +1,172 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: Beers Application
+objects:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: ${NAME_FE}
+      part: fe
+    name: ${NAME_FE}
+  spec:
+    ports:
+    - name: 8080-tcp
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      app: ${NAME_FE}
+      deploymentconfig: ${NAME_FE}
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: ${NAME_FE}
+      part: fe
+    name: ${NAME_FE}
+  spec:
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      app: ${NAME_FE}
+      deploymentconfig: ${NAME_FE}
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          app: ${NAME_FE}
+          part: fe
+          deploymentconfig: ${NAME_FE}
+      spec:
+        containers:
+        - image: ${NAME_FE}:latest
+          imagePullPolicy: Always
+          name: ${NAME_FE}
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+          volumeMounts:
+            - name: default-volume
+              mountPath:  /opt/app-root/etc/nginx.default.d/
+            - name: module-volume
+              mountPath: /opt/app-root/etc/nginx.d/
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+        volumes:
+          - name: default-volume
+            configMap:
+              name: beers-fe-nginx-default
+          - name: module-volume
+            configMap:
+              name: beers-fe-nginx-module
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+    test: false
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - ${NAME_FE}
+        from:
+          kind: ImageStreamTag
+          name: ${NAME_FE}:latest
+      type: ImageChange
+    - type: ConfigChange
+- apiVersion: build.openshift.io/v1
+  kind: BuildConfig
+  metadata:
+    labels:
+      app: ${NAME_FE}
+      part: fe
+    name: ${NAME_FE}
+  spec:
+    failedBuildsHistoryLimit: 5
+    nodeSelector: null
+    output:
+      to:
+        kind: ImageStreamTag
+        name: ${NAME_FE}:latest
+    postCommit: {}
+    resources: {}
+    runPolicy: Serial
+    source:
+      contextDir: /
+      git:
+        uri: https://github.com/mhjmaas/beers-fe.git
+      type: Git
+    strategy:
+      sourceStrategy:
+        from:
+          kind: ImageStreamTag
+          name: s2i-angular:latest
+      type: Source
+    successfulBuildsHistoryLimit: 5
+    triggers:
+      - type: ConfigChange
+      - type: ImageChange
+- apiVersion: image.openshift.io/v1
+  kind: ImageStream
+  metadata:
+    labels:
+      app: ${NAME_FE}
+      part: fe
+    name: ${NAME_FE}
+  spec:
+    lookupPolicy:
+      local: false
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    labels:
+      app: ${NAME_FE}
+      part: fe
+    name: ${NAME_FE}
+  spec:
+    port:
+      targetPort: 8080-tcp
+    to:
+      kind: Service
+      name: ${NAME_FE}
+      weight: 100
+    wildcardPolicy: None
+- kind: ConfigMap
+  apiVersion: v1
+  metadata:
+    name: ${NAME_FE}-nginx-module
+    labels:
+      app: ${NAME_FE}
+      part: fe
+      name: ${NAME_FE}-nginx-module
+  data:
+    module.conf: "upstream beerapi {\r\n  server beers-api.beers-development.svc:8080;\r\n}\r\n"
+- kind: ConfigMap
+  apiVersion: v1
+  metadata:
+    name: ${NAME_FE}-nginx-default
+    labels:
+      app: ${NAME_FE}
+      part: fe
+      name: ${NAME_FE}-nginx-default
+  data:
+    default.conf: "location /api/beer {\r\n    proxy_pass http://beerapi/beer;\r\n    proxy_http_version 1.1;\r\n    proxy_set_header Upgrade $http_upgrade;\r\n    proxy_set_header Connection 'upgrade';\r\n    proxy_set_header Host $host;\r\n    proxy_set_header X-Real-IP  $remote_addr;\r\n    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\r\n    proxy_cache_bypass $http_upgrade;\r\n}\r\n\r\nlocation @handle_redirect {\r\n    set $saved_redirect_location '$upstream_http_location';\r\n    proxy_pass $saved_redirect_location;\r\n}\r\n\r\nlocation /nginx_status {\r\n   stub_status on;\r\n   access_log off;\r\n   allow all;\r\n   deny all;\r\n}\r\n"
+parameters:
+  - name: NAME_FE
+    description: "The name of the frontend applications"
+    value: "beers-fe"
